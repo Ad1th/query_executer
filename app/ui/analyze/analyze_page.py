@@ -71,46 +71,25 @@ def analyze_page():
         row_id = upload_table.selected[0].get("id")
         dataset = upload_list[row_id]
         filters = extract_filters(dataset[0])
-        filters_select.set_options(filters, value=1)
-        filters_select.update()
+        #ilters_select.set_options(filters, value=1)
+        #filters_select.update()
 
-    def on_upload_import_queries(e: events.UploadEventArguments):
-        """
-        Callback for "Import Queries" upload block
-        """
-        text = e.content.read().decode("utf-8")
-        data_list = json.loads(text)
-        runtime=load_runtime_from_json(data_list, "o_orderdate")
-        result = sample_adaptive_balanced(runtime)
+    @ui.refreshable
+    def generate_plots():
+        pass
 
-        FILTER = "o_orderdate"
-        ENGINE = "auto"
-        DEGREE = 2
+    with ui.row():
+        with ui.column():
+            ui.label("Upload JSON Data")
+            ui.label("Sample, Fit and Calculate Qerr")
+            input_box = ui.input(value="Default")
+            ui.upload(on_upload=on_upload_query_result).classes('w-[200px]')
 
-        model = fit_polynomial_on_sample(result, filter_name=FILTER, engine=ENGINE, degree=DEGREE)
-
-        evaluation = predict_and_qerr_for_all(runtime, model, filter_name=FILTER, engine=ENGINE)
-
-        stats = summarize_qerr(evaluation["qerr"])
-
-        print(evaluation.head())
-        print(stats)
-        plot_qerr(evaluation, filter_name="o_orderdate")
-        ui.notify("Upload done")
-
-        res = sample_stratified(runtime)
-        model_2 = fit_polynomial_on_sample(res, filter_name=FILTER, engine=ENGINE, degree=DEGREE)
-        evaluation_2 = predict_and_qerr_for_all(runtime, model_2, filter_name=FILTER, engine=ENGINE)
-        plot_qerr(evaluation_2, filter_name="o_orderdate")
-
-    ui.label("Upload JSON Data")
-    ui.label("Sample, Fit and Calculate Qerr")
-    input_box = ui.input(value="Default")
-    ui.upload(on_upload=on_upload_query_result).classes('w-[200px]')
-
-    upload_table = ui.table(columns=upload_table_columns, rows=upload_table_rows, row_key='id', on_select=on_select_upload_table)
-    upload_table.set_selection("single")
-
-    sampling_method_select = ui.select(options=["Stratified", "Adaptive"])
-    filters_select = ui.select(options=[])
-    ui.button("Calculate QError", on_click=on_click_calculate_qerr)
+        with ui.column():
+            upload_table = ui.table(columns=upload_table_columns, rows=upload_table_rows, row_key='id', on_select=on_select_upload_table)
+            upload_table.set_selection("multiple")
+            sampling_method_select = ui.select(options=["Stratified", "Adaptive", "Random", "Uniform"], multiple=True).props('use-chips')
+        #filters_select = ui.select(options=[])
+        with ui.column():
+            ui.button("Sampling QError", on_click=on_click_calculate_qerr)
+            ui.button("Engine QError", on_click=on_click_calculate_qerr)

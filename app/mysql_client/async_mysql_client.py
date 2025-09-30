@@ -38,6 +38,7 @@ class AsyncMysqlClient:
         try:
             await self.cursor.execute(f"EXPLAIN ANALYZE {query}")
             results = await self.cursor.fetchone()
+            results = results["EXPLAIN"]
             return results
         except Exception as e:
             print("Query Analyze Failed: ", e)

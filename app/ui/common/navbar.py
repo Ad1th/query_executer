@@ -45,7 +45,7 @@ def navbar():
 
     with ui.header().classes("items-center justify-between p-0 px-4 no-wrap"):
         with ui.row().classes("items-center"):
-            ui.label("Agalar Turizm").classes("text-xl font-bold")
+            ui.label("Query Profiler").classes("text-xl font-bold")
             ui.separator().props("vertical")
             with ui.row():
                 ui.button("Query", on_click=lambda: ui.navigate.to("/")).props(highlight_if_route("/", current_route))
