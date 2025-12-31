@@ -250,16 +250,17 @@ class BackendService:
     async def _process_result(self, result, ready_query, benchmark_query):
         var_data = ready_query.variables
         var_names = [v["name"] for v in var_data]
+
         db = benchmark_query.database.lower()
 
-        if db == "mysql":
-            parsed = parse_analyze_mysql(result, var_names)
-            total_runtime = extract_total_runtime(result)
-
-        elif db == "postgres":
+        if db == "postgres":
             parsed_pg = extract_runtime_and_filter_scans_postgres(result, var_names)
             parsed = parsed_pg["filters"]
             total_runtime = parsed_pg["total_runtime"]
+
+        elif db == "mysql":
+            parsed = parse_analyze_mysql(result, var_names)
+            total_runtime = extract_total_runtime(result)
 
         elif db == "duckdb":
             parsed_dd = extract_runtime_and_filter_scans_duckdb(result, var_names)
@@ -270,10 +271,9 @@ class BackendService:
             parsed = []
             total_runtime = 0
 
-        # 🔴 WRITE EXPERIMENT (THIS IS THE KEY STEP)
         write_experiment(
             query_id=benchmark_query.name,
-            database=benchmark_query.database,
+            database=benchmark_query.database.lower(),
             parameters={v["name"]: v["value"] for v in var_data},
             runtime_ms=total_runtime,
             filters={
