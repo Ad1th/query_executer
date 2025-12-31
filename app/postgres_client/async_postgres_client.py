@@ -31,22 +31,22 @@ class AsyncPostgresClient:
 
     async def analyze_query(self, query: str):
         """
-        Execute the given SQL query asynchronously.
+        Execute EXPLAIN ANALYZE on the given SQL query asynchronously.
         :param query: SQL query to execute.
-        :return: (results, time_taken)
+        :return: JSON plan object from EXPLAIN (FORMAT JSON)
         """
-        query = f"EXPLAIN (ANALYZE, BUFFERS, VERBOSE) {query}"
+        query = f"EXPLAIN (ANALYZE, BUFFERS, VERBOSE, FORMAT JSON) {query}"
         try:
             async with self.conn.cursor(row_factory=dict_row) as cur:
                 await cur.execute(query)
                 result = await cur.fetchall()
-                text = "\n".join(r['QUERY PLAN'] for r in result)
-                print(text)
-                return text
+                # FORMAT JSON returns a single row with 'QUERY PLAN' containing the JSON
+                plan_json = result[0]['QUERY PLAN'][0]
+                return plan_json
         except Exception as e:
             print("Query failed:", e)
             await self.conn.rollback()
-            return None, 0
+            return None
 
     async def get_size_of_database(self, database: str):
         """

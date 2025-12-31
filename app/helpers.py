@@ -1,7 +1,7 @@
 import re
 from typing import List
 import itertools
-from app.types import QueryParameter, ReadyQuery
+from app.models import QueryParameter, ReadyQuery
 
 
 def extract_variables(query: str) -> List[QueryParameter]:

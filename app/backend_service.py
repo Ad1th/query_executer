@@ -4,7 +4,7 @@ from typing import Dict, List, Callable
 
 from app.config import load_config
 from app.helpers import build_all_queries
-from app.types import BenchmarkQuery, ReadyQuery
+from app.models import BenchmarkQuery, ReadyQuery
 from app.experiment_writer import write_experiment
 
 # from app.db_client.base_db_client import BaseDBClient
@@ -231,6 +231,9 @@ class BackendService:
         for i, ready_query in enumerate(queries, start=1):
             try:
                 result = await client.analyze_query(ready_query.query)
+                if result is None:
+                    print(f"[ERROR] Query {i}: Query returned None (likely failed)")
+                    continue
                 formatted = await self._process_result(
                     result, ready_query, benchmark_query
                 )

@@ -96,17 +96,84 @@ def extract_runtime_and_filter_scans_duckdb(profile_json: str, filters: List[str
     return {"total_runtime": total_runtime, "filters": filters_list}
 
 
-def extract_runtime_and_filter_scans_postgres(explain_text: str, filters: List[str]) -> Dict[str, Any]:
+def extract_runtime_and_filter_scans_postgres(plan_json: dict, filters: List[str]) -> Dict[str, Any]:
     """
-    explain_text: the raw text output of EXPLAIN ANALYZE (BUFFERS) from PostgreSQL
-    filters: list of substrings to search for inside lines like: 'Filter: (<expr>)'
+    plan_json: the JSON output of EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) from PostgreSQL
+    filters: list of substrings to search for inside Filter expressions
              e.g., ["o_orderdate", "r_name"]
 
     Returns:
         {
           "total_runtime": <float>,   # in seconds
           "filters": [
-            {"variable": "<filter>", "total_rows": <int>}, ...
+            {"variable": "<filter>", "total_rows": <int>, "rows_removed": <int>}, ...
+          ]
+        }
+    """
+    # Handle case where plan_json is a string (legacy text format)
+    if isinstance(plan_json, str):
+        return _extract_runtime_and_filter_scans_postgres_text(plan_json, filters)
+
+    # --- total runtime (seconds) ---
+    total_runtime = 0.0
+    if "Execution Time" in plan_json:
+        total_runtime = float(plan_json["Execution Time"]) / 1000.0
+
+    # --- prepare accumulators ---
+    scans: Dict[str, Dict[str, int]] = {f: {"total_rows": 0, "rows_removed": 0} for f in filters}
+    norm_filters = [f.lower() for f in filters]
+
+    def walk_node(node: Dict[str, Any]):
+        """Recursively walk the plan tree and extract filter information."""
+        if not isinstance(node, dict):
+            return
+
+        # Check for Filter in this node
+        filter_expr = node.get("Filter", "")
+        if filter_expr:
+            filter_expr_lower = filter_expr.lower()
+            
+            # Get actual rows and loops for this node
+            actual_rows = node.get("Actual Rows", 0)
+            actual_loops = node.get("Actual Loops", 1)
+            rows_removed = node.get("Rows Removed by Filter", 0)
+            
+            # Calculate total rows (output + removed) * loops
+            rows_output = actual_rows * max(1, actual_loops)
+            total_rows_removed = rows_removed * max(1, actual_loops)
+            total_rows_scanned = rows_output + total_rows_removed
+
+            for f_norm, f_raw in zip(norm_filters, filters):
+                if f_norm in filter_expr_lower:
+                    scans[f_raw]["total_rows"] += total_rows_scanned
+                    scans[f_raw]["rows_removed"] += total_rows_removed
+
+        # Recurse into child plans
+        for child in node.get("Plans", []):
+            walk_node(child)
+
+    # Get the root plan node
+    root = plan_json.get("Plan", plan_json)
+    walk_node(root)
+
+    filters_list = [
+        {"variable": k, "total_rows": v["total_rows"], "rows_removed": v["rows_removed"]}
+        for k, v in scans.items()
+    ]
+    return {"total_runtime": total_runtime, "filters": filters_list}
+
+
+def _extract_runtime_and_filter_scans_postgres_text(explain_text: str, filters: List[str]) -> Dict[str, Any]:
+    """
+    Legacy function for parsing text format EXPLAIN ANALYZE output.
+    explain_text: the raw text output of EXPLAIN ANALYZE (BUFFERS) from PostgreSQL
+    filters: list of substrings to search for inside lines like: 'Filter: (<expr>)'
+
+    Returns:
+        {
+          "total_runtime": <float>,   # in seconds
+          "filters": [
+            {"variable": "<filter>", "total_rows": <int>, "rows_removed": <int>}, ...
           ]
         }
     """
@@ -118,7 +185,7 @@ def extract_runtime_and_filter_scans_postgres(explain_text: str, filters: List[s
         total_runtime = float(m_rt.group(1)) / 1000.0
 
     # --- prepare accumulators ---
-    scans: Dict[str, int] = {f: 0 for f in filters}
+    scans: Dict[str, Dict[str, int]] = {f: {"total_rows": 0, "rows_removed": 0} for f in filters}
     norm_filters = [f.lower() for f in filters]
 
     # Regexes for parsing key lines
@@ -129,39 +196,30 @@ def extract_runtime_and_filter_scans_postgres(explain_text: str, filters: List[s
     # State while streaming lines
     current_rows = 0
     current_loops = 1
-    last_matched_filters: List[str] = []     # the *original* filter substrings that matched
-    last_rows_output = 0                     # rows * loops for the node where Filter matched
+    last_matched_filters: List[str] = []
+    last_rows_output = 0
 
     lines = explain_text.splitlines()
 
     def flush_pending_without_removed():
-        """If we saw a Filter but no 'Rows Removed by Filter', count just rows_output."""
         nonlocal last_matched_filters, last_rows_output
         if last_matched_filters:
             for f in last_matched_filters:
-                scans[f] += last_rows_output
-            # clear pending
+                scans[f]["total_rows"] += last_rows_output
             last_matched_filters = []
             last_rows_output = 0
 
     for line in lines:
-        # 1) Node header: update rows/loops; if we had a pending Filter (no rows-removed seen yet),
-        #    flush it before starting a new node.
         m_head = re_node_header.search(line)
         if m_head:
-            # new node encountered — flush any pending counts from previous Filter
             flush_pending_without_removed()
-
             current_rows = int(m_head.group(1))
             current_loops = int(m_head.group(2))
             continue
 
-        # 2) Filter line: check for matches against provided substrings (case-insensitive)
         m_filt = re_filter_line.search(line)
         if m_filt:
-            # starting a new filter within current node — flush any pending from previous filter first
             flush_pending_without_removed()
-
             filt_expr_l = m_filt.group(1).lower()
 
             matched: List[str] = []
@@ -171,26 +229,25 @@ def extract_runtime_and_filter_scans_postgres(explain_text: str, filters: List[s
 
             if matched:
                 last_matched_filters = matched
-                # rows_output is rows * loops from the most recent node header
                 last_rows_output = current_rows * max(1, current_loops)
             continue
 
-        # 3) Rows Removed by Filter (pair with the most recent Filter, if any)
         m_rr = re_rows_removed.search(line)
         if m_rr and last_matched_filters:
             removed = int(m_rr.group(1)) * max(1, current_loops)
-            # rows scanned = rows_output + rows_removed
             for f in last_matched_filters:
-                scans[f] += last_rows_output + removed
-            # clear pending after consuming rows-removed
+                scans[f]["total_rows"] += last_rows_output + removed
+                scans[f]["rows_removed"] += removed
             last_matched_filters = []
             last_rows_output = 0
             continue
 
-    # End of file: if there was a pending filter without a "Rows Removed..." line, flush it
     if last_matched_filters:
         for f in last_matched_filters:
-            scans[f] += last_rows_output
+            scans[f]["total_rows"] += last_rows_output
 
-    filters_list = [{"variable": k, "total_rows": v} for k, v in scans.items()]
+    filters_list = [
+        {"variable": k, "total_rows": v["total_rows"], "rows_removed": v["rows_removed"]}
+        for k, v in scans.items()
+    ]
     return {"total_runtime": total_runtime, "filters": filters_list}

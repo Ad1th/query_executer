@@ -6,7 +6,7 @@ from nicegui import ui, events
 from app.config import load_config
 from app.backend_service import BackendService, start_db_connections, get_min_max_of_column
 from app.helpers import extract_variables
-from app.types import BenchmarkQuery
+from app.models import BenchmarkQuery
 from app.ui.analyze.analyze_page import analyze_page
 from app.ui.common.navbar import navbar
 
