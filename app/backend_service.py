@@ -5,6 +5,7 @@ from typing import Dict, List, Callable
 from app.config import load_config
 from app.helpers import build_all_queries
 from app.types import BenchmarkQuery, ReadyQuery
+from app.experiment_writer import write_experiment
 
 # from app.db_client.base_db_client import BaseDBClient
 
@@ -249,17 +250,18 @@ class BackendService:
     async def _process_result(self, result, ready_query, benchmark_query):
         var_data = ready_query.variables
         var_names = [v["name"] for v in var_data]
+        db = benchmark_query.database.lower()
 
-        if benchmark_query.database.lower() == "mysql":
+        if db == "mysql":
             parsed = parse_analyze_mysql(result, var_names)
             total_runtime = extract_total_runtime(result)
 
-        elif benchmark_query.database.lower() == "postgres":
+        elif db == "postgres":
             parsed_pg = extract_runtime_and_filter_scans_postgres(result, var_names)
             parsed = parsed_pg["filters"]
             total_runtime = parsed_pg["total_runtime"]
 
-        elif benchmark_query.database.lower() == "duckdb":
+        elif db == "duckdb":
             parsed_dd = extract_runtime_and_filter_scans_duckdb(result, var_names)
             parsed = parsed_dd["filters"]
             total_runtime = parsed_dd["total_runtime"]
@@ -267,6 +269,22 @@ class BackendService:
         else:
             parsed = []
             total_runtime = 0
+
+        # 🔴 WRITE EXPERIMENT (THIS IS THE KEY STEP)
+        write_experiment(
+            query_id=benchmark_query.name,
+            database=benchmark_query.database,
+            parameters={v["name"]: v["value"] for v in var_data},
+            runtime_ms=total_runtime,
+            filters={
+                f["variable"]: {
+                    "total_rows": f["total_rows"],
+                    "rows_removed": f.get("rows_removed", 0),
+                }
+                for f in parsed
+            },
+            plan_json=result,
+        )
 
         return {
             "server": benchmark_query.database,
