@@ -1,7 +1,9 @@
 from pathlib import Path
 import json
 from datetime import datetime
-import uuid
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]  # app/ -> project root
+EXPERIMENTS_DIR = PROJECT_ROOT / "experiments"
 
 
 def write_experiment(
@@ -10,31 +12,14 @@ def write_experiment(
     parameters: dict,
     runtime_ms: float,
     filters: dict,
-    plan_json,
+    plan_json: dict,
 ):
-    """
-    Persist one experiment run to disk.
-
-    experiments/
-      └── postgres/
-          └── q1/
-              └── <run_id>/
-                  ├── plan.json
-                  ├── metrics.json
-                  └── meta.json
-    """
-
-    db = database.lower()
-    base = Path("experiments") / db / query_id
+    base = EXPERIMENTS_DIR / database / query_id
     base.mkdir(parents=True, exist_ok=True)
 
-    run_id = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
-    run_dir = base / run_id
-    run_dir.mkdir(parents=True)
-
-    # Normalize Postgres JSON format (usually [ { ... } ])
-    if isinstance(plan_json, list) and len(plan_json) == 1:
-        plan_json = plan_json[0]
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_dir = base / ts
+    run_dir.mkdir()
 
     (run_dir / "plan.json").write_text(
         json.dumps(plan_json, indent=2)
@@ -54,9 +39,9 @@ def write_experiment(
     (run_dir / "meta.json").write_text(
         json.dumps(
             {
+                "database": database,
                 "query_id": query_id,
-                "database": db,
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": ts,
             },
             indent=2,
         )
