@@ -8,3 +8,6 @@ To run on your local
 This starts app on localhost:8082.
 
 Create a copy of config/main/settings.yaml to config/local/settings.yaml and use config values for your own local
+
+
+pipenv run uvicorn main:app --workers 1 --log-level info --port 8082

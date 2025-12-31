@@ -5,7 +5,6 @@ name = "pypi"
 
 [packages]
 mysql-connector-python = "*"
-nicegui = "*"
 fastapi = "*"
 omegaconf = "*"
 psycopg = {extras = ["binary", "pool"], version = "*"}
@@ -14,6 +13,7 @@ duckdb = "*"
 numpy = "*"
 scikit-learn = "*"
 matplotlib = "*"
+nicegui = "*"
 
 [dev-packages]
 
