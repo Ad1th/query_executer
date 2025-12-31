@@ -2,8 +2,12 @@ from pathlib import Path
 import json
 from datetime import datetime
 
+# Resolve DB_Performance/ from query_executer/app/experiment_writer.py
+# parents[0] = app/, parents[1] = query_executer/, parents[2] = DB_Performance/
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 EXPERIMENTS_DIR = PROJECT_ROOT / "experiments"
+
+print(f"[experiment_writer] Resolved experiments path: {EXPERIMENTS_DIR}")
 
 
 def write_experiment(
@@ -14,9 +18,6 @@ def write_experiment(
     filters: dict,
     plan_json,
 ):
-    print("📁 experiment_writer __file__ =", Path(__file__).resolve())
-    print("📁 PROJECT_ROOT =", PROJECT_ROOT)
-    print("📁 EXPERIMENTS_DIR =", EXPERIMENTS_DIR)
     base = EXPERIMENTS_DIR / database / query_id
     base.mkdir(parents=True, exist_ok=True)
 
@@ -24,9 +25,7 @@ def write_experiment(
     run_dir = base / ts
     run_dir.mkdir()
 
-    (run_dir / "plan.json").write_text(
-        json.dumps(plan_json, indent=2)
-    )
+    (run_dir / "plan.json").write_text(json.dumps(plan_json, indent=2))
 
     (run_dir / "metrics.json").write_text(
         json.dumps(
